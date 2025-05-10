@@ -713,4 +713,29 @@ contains
 #endif
   end function opr_device_cfl
 
+!ctrl k u
+!   subroutine opr_device_rotate_cyc(rx, ry, rz, idir, coef)
+!     real(kind=rp), dimension(Xh%lx, Xh%ly, Xh%lz, nelv) :: u, v, w !dimensions vector or r4
+!     integer :: idir
+!     type(coef_t) :: coef
+!     type(c_ptr) :: u_d, v_d, w_d
+
+!     u_d = device_get_ptr(u)
+!     v_d = device_get_ptr(v)
+!     w_d = device_get_ptr(w)
+
+! #ifdef HAVE_HIP
+!      call neko_error('No device backend configured for rotate_cyc')
+! #elif HAVE_CUDA
+!     call cuda_rotate(rx_d, ry_d, rz_d, idir, &
+!          coef%dof%x_d, coef%dof%y_d, coef%dof%z_d, &
+!          coef%nx_d, coef%ny_d, coef%nz_d, &
+!          periodic_idx, periodic_normal_idx &)
+! #elif HAVE_OPENCL
+!     call neko_error('No device backend configured for rotate_cyc')
+! #else
+!     call neko_error('No device backend configured for rotate_cyc')
+! #endif
+!   end subroutine opr_device_rotate_cyc
+
 end module opr_device
