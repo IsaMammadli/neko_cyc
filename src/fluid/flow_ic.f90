@@ -35,6 +35,7 @@ module flow_ic
   use num_types, only : rp
   use logger, only: neko_log, LOG_SIZE
   use gather_scatter, only : gs_t, GS_OP_ADD
+  use operators, only : rotate_cyc
   use neko_config, only : NEKO_BCKND_DEVICE
   use flow_profile, only : blasius_profile, blasius_linear, blasius_cubic, &
        blasius_quadratic, blasius_quartic, blasius_sin
@@ -215,9 +216,13 @@ contains
     end if
 
     ! Ensure continuity across elements for initial conditions
+    !cyclic_mod_checked - this is opdssum from ic.f/setics/projfld_c0
+    !write(*, *) 'Rotate from flow_ic'
+    call rotate_cyc(u%x, v%x, w%x, 1, coef)
     call gs%op(u%x, u%dof%size(), GS_OP_ADD)
     call gs%op(v%x, v%dof%size(), GS_OP_ADD)
     call gs%op(w%x, w%dof%size(), GS_OP_ADD)
+    call rotate_cyc(u%x, v%x, w%x, 0, coef)
 
     if (NEKO_BCKND_DEVICE .eq. 1) then
        call device_col2(u%x_d, coef%mult_d, u%dof%size())

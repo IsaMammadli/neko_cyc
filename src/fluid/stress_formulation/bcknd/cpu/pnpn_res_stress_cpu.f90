@@ -1,7 +1,7 @@
 !> Residuals in the Pn-Pn formulation (CPU version)
 module pnpn_res_stress_cpu
   use gather_scatter, only : gs_t, GS_OP_ADD
-  use operators, only : dudxyz, cdtp, curl, opgrad, strain_rate
+  use operators, only : dudxyz, cdtp, curl, opgrad, strain_rate, rotate_cyc
   use field, only : field_t
   use ax_product, only : ax_t
   use coefs, only : coef_t
@@ -141,10 +141,13 @@ contains
        ta3%x(i,1,1,1) = f_z%x(i,1,1,1) / rho%x(i,1,1,1) &
             - ((wa3%x(i,1,1,1) / rho%x(i,1,1,1)) * c_Xh%B(i,1,1,1))
     end do
-
+    !cyclic_mod_checked
+    !write(*, *) 'Rotate from pnpn_res_stress'
+    call rotate_cyc(ta1%x, ta2%x, ta3%x, 1, c_Xh)
     call gs_Xh%op(ta1, GS_OP_ADD)
     call gs_Xh%op(ta2, GS_OP_ADD)
     call gs_Xh%op(ta3, GS_OP_ADD)
+    call rotate_cyc(ta1%x, ta2%x, ta3%x, 0, c_Xh)
 
     do i = 1, n
        ta1%x(i,1,1,1) = ta1%x(i,1,1,1) * c_Xh%Binv(i,1,1,1)

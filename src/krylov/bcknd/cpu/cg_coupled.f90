@@ -42,6 +42,7 @@ module cg_cpld
   use bc_list, only : bc_list_t
   use math, only : glsc3, glsc2
   use utils, only : neko_error
+  use operators, only : rotate_cyc
   implicit none
   private
 
@@ -286,9 +287,14 @@ contains
          end do
 
          call Ax%compute_vector(w1, w2, w3, p1, p2, p3, coef, x%msh, x%Xh)
+         !cyclic_mod_checked - this is opdssum in cggosf. Note only 1 opdssum is called. 
+         !Other two never called as iffdm=.false. inside the subroutine
+         !write(*, *) 'Rotate from cg_coupled'
+         call rotate_cyc(w1, w2, w3, 1, coef)
          call gs_h%op(w1, n, GS_OP_ADD)
          call gs_h%op(w2, n, GS_OP_ADD)
          call gs_h%op(w3, n, GS_OP_ADD)
+         call rotate_cyc(w1, w2, w3, 0, coef)
          call blstx%apply_scalar(w1, n)
          call blsty%apply_scalar(w2, n)
          call blstz%apply_scalar(w3, n)

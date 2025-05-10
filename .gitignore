@@ -55,7 +55,7 @@ src/.libs/libneko.la
 src/.libs/libneko.lai
 ltmain.sh
 lib/*
-
+simulated_examples/*
 # Ignore temporary files
 *~
 *.swp

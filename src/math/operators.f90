@@ -37,7 +37,8 @@ module operators
   use num_types, only : rp, i8
   use opr_cpu, only : opr_cpu_cfl, opr_cpu_curl, opr_cpu_opgrad, &
        opr_cpu_conv1, opr_cpu_convect_scalar, opr_cpu_cdtp, &
-       opr_cpu_dudxyz, opr_cpu_lambda2, opr_cpu_set_convect_rst
+       opr_cpu_dudxyz, opr_cpu_lambda2, opr_cpu_set_convect_rst, &
+       opr_cpu_rotate_cyc_r4, opr_cpu_rotate_cyc_vector
   use opr_sx, only : opr_sx_cfl, opr_sx_curl, opr_sx_opgrad, &
        opr_sx_conv1, opr_sx_convect_scalar, opr_sx_cdtp, &
        opr_sx_dudxyz, opr_sx_lambda2, opr_sx_set_convect_rst
@@ -63,8 +64,14 @@ module operators
   private
 
   public :: dudxyz, opgrad, ortho, cdtp, conv1, curl, cfl, &
-       lambda2op, strain_rate, div, grad, set_convect_rst, runge_kutta
-
+       lambda2op, strain_rate, div, grad, set_convect_rst, runge_kutta, &
+       rotate_cyc
+   
+  !cyclic_mod_other
+  interface rotate_cyc
+    module procedure rotate_cyc_r4
+    module procedure rotate_cyc_vector
+  end interface
 contains
 
   !> Compute derivative of a scalar field along a single direction.
@@ -630,5 +637,45 @@ contains
     end do
 
   end subroutine runge_kutta
+
+
+
+  subroutine rotate_cyc_r4(vx, vy, vz, idir, c_Xh)
+      real(kind=rp), dimension(:,:,:,:), intent(inout) :: vx, vy, vz
+      integer, intent(in) :: idir
+      type(coef_t),  intent(in) :: c_Xh
+
+      if (NEKO_BCKND_SX .eq. 1) then
+        !TODOS: opdssum sx
+        write(*, *) "OPDSSUM not available in SX yet"
+      else if (NEKO_BCKND_XSMM .eq. 1) then
+        !TODOS: opdssum xsmm
+        write(*, *) "OPDSSUM not available in XSMM yet"
+      else if (NEKO_BCKND_DEVICE .eq. 1) then
+        !TODOS: opdssum device
+        write(*, *) "OPDSSUM not available in DEVICE yet"
+      else
+         call opr_cpu_rotate_cyc_r4(vx, vy, vz, idir, c_Xh)
+      end if
+  end subroutine rotate_cyc_r4
+
+  subroutine rotate_cyc_vector(vx, vy, vz, idir, c_Xh)
+      real(kind=rp), dimension(:), intent(inout) :: vx, vy, vz
+      integer, intent(in) :: idir
+      type(coef_t),  intent(in) :: c_Xh
+
+      if (NEKO_BCKND_SX .eq. 1) then
+        !TODOS: opdssum sx
+        write(*, *) "OPDSSUM not available in SX yet"
+      else if (NEKO_BCKND_XSMM .eq. 1) then
+        !TODOS: opdssum xsmm
+        write(*, *) "OPDSSUM not available in XSMM yet"
+      else if (NEKO_BCKND_DEVICE .eq. 1) then
+        !TODOS: opdssum device
+        write(*, *) "OPDSSUM not available in DEVICE yet"
+      else
+         call opr_cpu_rotate_cyc_vector(vx, vy, vz, idir, c_Xh)
+      end if
+  end subroutine rotate_cyc_vector
 
 end module operators

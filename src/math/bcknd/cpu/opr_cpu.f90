@@ -40,12 +40,14 @@ module opr_cpu
   use gather_scatter, only : GS_OP_ADD
   use interpolation, only : interpolator_t
   use mathops, only : opcolv
+  use utils, only : linear_index, index_is_on_facet !cyclic_mod_other
   implicit none
   private
 
   public :: opr_cpu_dudxyz, opr_cpu_opgrad, opr_cpu_cdtp, &
        opr_cpu_conv1, opr_cpu_curl, opr_cpu_cfl, opr_cpu_lambda2, &
-       opr_cpu_convect_scalar, opr_cpu_set_convect_rst
+       opr_cpu_convect_scalar, opr_cpu_set_convect_rst, &
+       opr_cpu_rotate_cyc_r4, opr_cpu_rotate_cyc_vector, opr_cpu_rotate_cyc_loc
 
   interface
      module subroutine opr_cpu_dudxyz(du, u, dr, ds, dt, coef)
@@ -164,9 +166,13 @@ contains
     !!    BC dependent, Needs to change if cyclic
 
     call opcolv(w1%x, w2%x, w3%x, c_Xh%B, gdim, n)
+    !cyclic_mod_checked - this is opdssum from plan4.f/op_curl
+    !write(*, *) 'Rotate from opr_cpu_curl'
+    call opr_cpu_rotate_cyc_r4(w1%x, w2%x, w3%x, 1, c_Xh)
     call c_Xh%gs_h%op(w1, GS_OP_ADD)
     call c_Xh%gs_h%op(w2, GS_OP_ADD)
     call c_Xh%gs_h%op(w3, GS_OP_ADD)
+    call opr_cpu_rotate_cyc_r4(w1%x, w2%x, w3%x, 0, c_Xh)
     call opcolv(w1%x, w2%x, w3%x, c_Xh%Binv, gdim, n)
 
   end subroutine opr_cpu_curl
@@ -303,5 +309,191 @@ contains
     end do
 
   end subroutine opr_cpu_lambda2
+
+
+  subroutine opr_cpu_rotate_cyc_loc(rx, ry, rz, nsize, idir, c_Xh)
+    use iso_c_binding
+    real(kind=rp), intent(inout) :: rx(nsize), ry(nsize), rz(nsize)
+    integer, intent(in) :: nsize, idir
+    type(coef_t), intent(in) :: c_Xh
+    integer :: np, n, lx, ly, lz, pf, pe, i, j, k, lidx
+    real(kind=rp) :: un(3), x, y, z, dotprod, length, cost, sint, rnor, rtn1
+
+    np =  c_Xh%msh%periodic%size
+    lx = c_Xh%Xh%lx
+    ly = c_Xh%Xh%ly
+    lz = c_Xh%Xh%lz
+
+    do n = 1, np
+        do k = 1, lz
+        do j = 1, ly
+        do i = 1, lx
+          !pf = c_Xh%msh%periodic%p_facet_el(n)%x(1) !doesnt work parallel
+          !pe = c_Xh%msh%periodic%p_facet_el(n)%x(2) !doesnt work parallel
+          pf = c_Xh%msh%periodic%facet_el(n)%x(1)
+          pe = c_Xh%msh%periodic%facet_el(n)%x(2)
+          if (index_is_on_facet(i, j, k, lx, ly, lz, pf)) then
+               un = c_Xh%get_normal(i, j, k, pe, pf)
+               x = c_Xh%dof%x(i, j, k, pe)
+               y = c_Xh%dof%y(i, j, k, pe)
+               z = c_Xh%dof%z(i, j, k, pe)
+               dotprod = un(1)*y-un(2)*x
+
+               length = sqrt(un(1)*un(1)+un(2)*un(2))
+               cost = un(1)/length
+               sint = un(2)/length
+
+               lidx = linear_index(i, j, k, pe, lx, ly, lz)
+               !do forward (idir=1) or backward rotation (idir=0)
+               if (idir.eq.1) then
+                    rnor = rx(lidx)*cost+ry(lidx)*sint
+                    rtn1 =-rx(lidx)*sint+ry(lidx)*cost
+               else if(idir.eq.0) then
+                    rnor = rx(lidx)*cost-ry(lidx)*sint
+                    rtn1 = rx(lidx)*sint+ry(lidx)*cost
+               else
+                    write(*, *) "idir must be 0 or 1 in rotate_cyc"
+                    !stop !must be removed if do concurrent is used.
+               end if
+
+               !invert direction if vector comes out of plane (i.e. dotprod<0)
+               if (dotprod.ge.0) then
+                    rx(lidx) = rnor
+                    ry(lidx) = rtn1
+               else
+                    rx(lidx) =-rnor
+                    ry(lidx) =-rtn1
+               end if
+          end if
+
+        end do
+        end do
+        end do
+    end do
+
+  end subroutine opr_cpu_rotate_cyc_loc
+
+
+  subroutine opr_cpu_rotate_cyc_vector(rx, ry, rz, idir, c_Xh)
+    real(kind=rp), dimension(:), intent(inout) :: rx, ry, rz
+    integer, intent(in) :: idir
+    type(coef_t), intent(in) :: c_Xh
+    integer :: np, n, lx, ly, lz, pf, pe, i, j, k, lidx
+    real(kind=rp) :: un(3), x, y, z, dotprod, length, cost, sint, rnor, rtn1
+
+    np =  c_Xh%msh%periodic%size
+    lx = c_Xh%Xh%lx
+    ly = c_Xh%Xh%ly
+    lz = c_Xh%Xh%lz
+    
+    do n = 1, np
+        do k = 1, lz
+        do j = 1, ly
+        do i = 1, lx
+          !pf = c_Xh%msh%periodic%p_facet_el(n)%x(1) !doesnt work parallel
+          !pe = c_Xh%msh%periodic%p_facet_el(n)%x(2) !doesnt work parallel
+          pf = c_Xh%msh%periodic%facet_el(n)%x(1)
+          pe = c_Xh%msh%periodic%facet_el(n)%x(2)
+          if (index_is_on_facet(i, j, k, lx, ly, lz, pf)) then
+               un = c_Xh%get_normal(i, j, k, pe, pf)
+               x = c_Xh%dof%x(i, j, k, pe)
+               y = c_Xh%dof%y(i, j, k, pe)
+               z = c_Xh%dof%z(i, j, k, pe)
+               dotprod = un(1)*y-un(2)*x
+
+               length = sqrt(un(1)*un(1)+un(2)*un(2))
+               cost = un(1)/length
+               sint = un(2)/length
+
+               lidx = linear_index(i, j, k, pe, lx, ly, lz)
+               !do forward (idir=1) or backward rotation (idir=0)
+               if (idir.eq.1) then
+                    rnor = rx(lidx)*cost+ry(lidx)*sint
+                    rtn1 =-rx(lidx)*sint+ry(lidx)*cost
+               else if(idir.eq.0) then
+                    rnor = rx(lidx)*cost-ry(lidx)*sint
+                    rtn1 = rx(lidx)*sint+ry(lidx)*cost
+               else
+                    write(*, *) "idir must be 0 or 1 in rotate_cyc"
+                    !stop !must be removed if do concurrent is used.
+               end if
+
+               !invert direction if vector comes out of plane (i.e. dotprod<0)
+               if (dotprod.ge.0) then
+                    rx(lidx) = rnor
+                    ry(lidx) = rtn1
+               else
+                    rx(lidx) =-rnor
+                    ry(lidx) =-rtn1
+               end if
+          end if
+
+        end do
+        end do
+        end do
+    end do
+
+    end subroutine opr_cpu_rotate_cyc_vector
+
+    subroutine opr_cpu_rotate_cyc_r4(rx, ry, rz, idir, c_Xh)
+    real(kind=rp), dimension(:,:,:,:), intent(inout) :: rx, ry, rz
+    integer, intent(in) :: idir
+    type(coef_t), intent(in) :: c_Xh
+    integer :: np, n, lx, ly, lz, pf, pe, i, j, k, pi, pj, pk
+    real(kind=rp) :: un(3), x, y, z, dotprod, length, cost, sint, rnor, rtn1
+
+    np =  c_Xh%msh%periodic%size
+    lx = c_Xh%Xh%lx
+    ly = c_Xh%Xh%ly
+    lz = c_Xh%Xh%lz
+    
+     do n = 1, np
+          do k = 1, lz
+          do j = 1, ly
+          do i = 1, lx
+           !pf = c_Xh%msh%periodic%p_facet_el(n)%x(1) !doesnt work for parallel
+           !pe = c_Xh%msh%periodic%p_facet_el(n)%x(2) !doesnt work for parallel
+           pf = c_Xh%msh%periodic%facet_el(n)%x(1)
+           pe = c_Xh%msh%periodic%facet_el(n)%x(2)
+           if (index_is_on_facet(i, j, k, lx, ly, lz, pf)) then
+               un = c_Xh%get_normal(i, j, k, pe, pf)
+               x = c_Xh%dof%x(i, j, k, pe)
+               y = c_Xh%dof%y(i, j, k, pe)
+               z = c_Xh%dof%z(i, j, k, pe)
+               dotprod = un(1)*y-un(2)*x
+
+               length = sqrt(un(1)*un(1)+un(2)*un(2))
+               cost = un(1)/length
+               sint = un(2)/length
+
+               !do forward (idir=1) or backward rotation (idir=0)
+               if (idir.eq.1) then
+                    rnor = rx(i, j, k, pe)*cost+ry(i, j, k, pe)*sint
+                    rtn1 =-rx(i, j, k, pe)*sint+ry(i, j, k, pe)*cost
+               else if(idir.eq.0) then
+                    rnor = rx(i, j, k, pe)*cost-ry(i, j, k, pe)*sint
+                    rtn1 = rx(i, j, k, pe)*sint+ry(i, j, k, pe)*cost
+               else
+                    write(*, *) "idir must be 0 or 1 in rotate_cyc"
+                    !stop !must be removed if do concurrent is used.
+               end if
+
+               !invert direction if vector comes out of plane (i.e. dotprod<0)
+               if (dotprod.ge.0) then
+                    rx(i, j, k, pe) = rnor
+                    ry(i, j, k, pe) = rtn1
+               else
+                    rx(i, j, k, pe) =-rnor
+                    ry(i, j, k, pe) =-rtn1
+               end if
+          end if
+
+          end do
+          end do
+          end do
+    end do
+
+   end subroutine opr_cpu_rotate_cyc_r4
+
 
 end module opr_cpu

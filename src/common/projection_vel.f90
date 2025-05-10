@@ -46,6 +46,7 @@ module projection_vel
   use, intrinsic :: iso_c_binding
   use time_step_controller, only : time_step_controller_t
   use projection, only : projection_t, proj_ortho
+  use operators, only : rotate_cyc
 
   implicit none
   private
@@ -222,10 +223,19 @@ contains
          this%proj_v%bb(1,this%proj_v%m), &
          this%proj_w%bb(1,this%proj_w%m), x_u, x_v, x_w, &
          coef, coef%msh, coef%Xh)
-
+    !cyclic_mod_checked
+    !write(*, *) 'Rotate from projection_vel'
+    !call rotate_cyc(this%proj_u%bb(:,this%proj_u%m), this%proj_v%bb(:,this%proj_v%m),&
+    !this%proj_w%bb(:,this%proj_w%m), 1, coef)
+    !call opr_cpu_rotate_cyc_loc(this%proj_u%bb(1,this%proj_u%m), this%proj_v%bb(1,this%proj_v%m),&
+    !this%proj_w%bb(1,this%proj_w%m), n,  1, coef)
     call gs_h%gs_op_vector(this%proj_u%bb(1,this%proj_u%m), n, GS_OP_ADD)
     call gs_h%gs_op_vector(this%proj_v%bb(1,this%proj_v%m), n, GS_OP_ADD)
     call gs_h%gs_op_vector(this%proj_w%bb(1,this%proj_w%m), n, GS_OP_ADD)
+    !call opr_cpu_rotate_cyc_loc(this%proj_u%bb(1,this%proj_u%m), this%proj_v%bb(1,this%proj_v%m),&
+    !this%proj_w%bb(1,this%proj_w%m), n,  0, coef)
+    !call rotate_cyc(this%proj_u%bb(:,this%proj_u%m), this%proj_v%bb(:,this%proj_v%m),&
+    !this%proj_w%bb(:,this%proj_w%m), 0, coef)
 
     call bclst_u%apply_scalar(this%proj_u%bb(1,this%proj_u%m), n)
     call bclst_v%apply_scalar(this%proj_v%bb(1,this%proj_v%m), n)

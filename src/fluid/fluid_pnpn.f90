@@ -80,7 +80,7 @@ module fluid_pnpn
   use field_math, only : field_add2, field_copy
   use bc, only : bc_t
   use file, only : file_t
-  use operators, only : ortho
+  use operators, only : ortho, rotate_cyc
   use time_state, only : time_state_t
   implicit none
   private
@@ -282,6 +282,7 @@ contains
 
        ! Setup backend dependent vel residual routines
        call pnpn_vel_res_stress_factory(this%vel_res)
+       this%variable_material_properties = .false.!cyclic_mod_for_stress_formulation
     else
        ! Setup backend dependent Ax routines
        call ax_helm_factory(this%Ax_vel, full_formulation = .false.)
@@ -488,15 +489,23 @@ contains
 
     if (allocated(chkp%previous_mesh%elements) &
          .or. chkp%previous_Xh%lx .ne. this%Xh%lx) then
+       !cyclic_mod_ToBeDecided
+       !write(*, *) 'Rotate from fluid_pnpn 1'  
+       call rotate_cyc(this%u%x, this%v%x, this%w%x, 1, this%c_Xh)
        call this%gs_Xh%op(this%u, GS_OP_ADD)
        call this%gs_Xh%op(this%v, GS_OP_ADD)
        call this%gs_Xh%op(this%w, GS_OP_ADD)
+       call rotate_cyc(this%u%x, this%v%x, this%w%x, 0, this%c_Xh)
        call this%gs_Xh%op(this%p, GS_OP_ADD)
 
        do i = 1, this%ulag%size()
+          !cyclic_mod_ToBeDecided
+          !write(*, *) 'Rotate from fluid_pnpn 2'
+          call rotate_cyc(this%ulag%lf(i)%x, this%vlag%lf(i)%x, this%wlag%lf(i)%x, 1, this%c_Xh)
           call this%gs_Xh%op(this%ulag%lf(i), GS_OP_ADD)
           call this%gs_Xh%op(this%vlag%lf(i), GS_OP_ADD)
           call this%gs_Xh%op(this%wlag%lf(i), GS_OP_ADD)
+          call rotate_cyc(this%ulag%lf(i)%x, this%vlag%lf(i)%x, this%wlag%lf(i)%x, 0, this%c_Xh)
        end do
     end if
 
@@ -738,13 +747,14 @@ contains
            c_Xh, msh, Xh, &
            mu_field, rho_field, ext_bdf%diffusion_coeffs(1), &
            dt, dm_Xh%size())
-
+      call rotate_cyc(u_res%x, v_res%x, w_res%x, 1, c_Xh)
       call gs_Xh%op(u_res, GS_OP_ADD, event)
       call device_event_sync(event)
       call gs_Xh%op(v_res, GS_OP_ADD, event)
       call device_event_sync(event)
       call gs_Xh%op(w_res, GS_OP_ADD, event)
       call device_event_sync(event)
+      call rotate_cyc(u_res%x, v_res%x, w_res%x, 0, c_Xh)
 
       ! Set residual to zero at strong velocity boundaries.
       call this%bclst_vel_res%apply(u_res, v_res, w_res, t, tstep)
