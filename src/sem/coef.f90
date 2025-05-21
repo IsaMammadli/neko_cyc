@@ -39,13 +39,14 @@ module coefs
   use dofmap, only : dofmap_t
   use space, only: space_t
   use math, only : rone, invcol1, addcol3, subcol3, copy, &
-       chsign, rzero, invers2, glsum, NEKO_EPS
+       chsign, rzero, invers2, glsum, NEKO_EPS 
   use mesh, only : mesh_t
   use device_math, only : device_rone, device_invcol1, device_glsum
   use device_coef, only : device_coef_generate_geo, &
        device_coef_generate_dxydrst
   use mxm_wrapper, only : mxm
   use device
+  use utils, only : index_is_on_facet !cyclic_mod_coef
   use, intrinsic :: iso_c_binding
   implicit none
   private
@@ -94,6 +95,7 @@ module coefs
      real(kind=rp), allocatable :: nx(:,:,:,:)   !< x-direction of facet normal
      real(kind=rp), allocatable :: ny(:,:,:,:)   !< y-direction of facet normal
      real(kind=rp), allocatable :: nz(:,:,:,:)   !< z-direction of facet normal
+     real(kind=rp), allocatable :: cyc_angle(:,:,:,:) !cyclic_mod_coef
      !> Pointers to main fields
 
      real(kind=rp) :: volume
@@ -142,6 +144,7 @@ module coefs
      type(c_ptr) :: nx_d = C_NULL_PTR
      type(c_ptr) :: ny_d = C_NULL_PTR
      type(c_ptr) :: nz_d = C_NULL_PTR
+     type(c_ptr) :: cyc_angle_d = C_NULL_PTR !cyclic_mod_coef
 
 
    contains
@@ -364,6 +367,14 @@ contains
        call invcol1(this%mult, n)
     end if
 
+
+   allocate(this%cyc_angle(this%Xh%lx, this%Xh%ly, this%Xh%lz, this%msh%nelv)) !cyclic_mod_coef
+   call coef_compute_cyclic_angle(this) !cyclic_mod_coef
+
+   if (NEKO_BCKND_DEVICE .eq. 1) then !cyclic_mod_coef
+       call device_map(this%cyc_angle, this%cyc_angle_d, n)
+   end if
+
   end subroutine coef_init_all
 
   !> Deallocate coefficients
@@ -508,6 +519,9 @@ contains
 
     if (allocated(this%nz)) then
        deallocate(this%nz)
+    end if
+    if (allocated(this%cyc_angle)) then !cyclic_mod_coef
+       deallocate(this%cyc_angle)
     end if
 
 
@@ -657,6 +671,9 @@ contains
 
     if (c_associated(this%nz_d)) then
        call device_Free(this%nz_d)
+    end if
+    if (c_associated(this%cyc_angle_d)) then !cyclic_mod_coef
+       call device_Free(this%cyc_angle_d)
     end if
 
 
@@ -1158,8 +1175,38 @@ contains
        call device_memcpy(coef%nz, coef%nz_d, n, &
                           HOST_TO_DEVICE, sync=.false.)
     end if
-
+    
   end subroutine coef_generate_area_and_normal
+
+  subroutine coef_compute_cyclic_angle(coef)
+    type(coef_t), intent(inout) :: coef
+    integer :: i, j, k, e, n, lx, ly, lz, np, pf, pe, ntot
+    real(kind=rp) :: un(3), cost, length
+
+    np =  coef%msh%periodic%size
+    lx = coef%Xh%lx
+    ly = coef%Xh%ly
+    lz = coef%Xh%lz
+    call rzero(coef%cyc_angle, coef%dof%size())
+
+    do n = 1, np
+      pf = coef%msh%periodic%facet_el(n)%x(1)
+      pe = coef%msh%periodic%facet_el(n)%x(2)
+      do k = 1, lz
+      do j = 1, ly
+      do i = 1, lx 
+         if (index_is_on_facet(i, j, k, lx, ly, lz, pf)) then
+            un = coef%get_normal(i, j, k, pe, pf)
+            !length = sqrt(un(1)*un(1)+un(2)*un(2))
+            !cost = un(1)/length !sint = un(2)/length
+            coef%cyc_angle(i, j, k, pe) = atan2(un(2), un(1))
+         end if
+      end do
+      end do 
+      end do
+    end do
+  end subroutine coef_compute_cyclic_angle 
+
 
 
 end module coefs

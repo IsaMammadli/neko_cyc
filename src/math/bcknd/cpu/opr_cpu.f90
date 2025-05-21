@@ -47,7 +47,8 @@ module opr_cpu
   public :: opr_cpu_dudxyz, opr_cpu_opgrad, opr_cpu_cdtp, &
        opr_cpu_conv1, opr_cpu_curl, opr_cpu_cfl, opr_cpu_lambda2, &
        opr_cpu_convect_scalar, opr_cpu_set_convect_rst, &
-       opr_cpu_rotate_cyc_r4, opr_cpu_rotate_cyc_vector, opr_cpu_rotate_cyc_loc, set_periodic_idx
+       opr_cpu_rotate_cyc_r4, opr_cpu_rotate_cyc_vector 
+       !opr_cpu_rotate_cyc_loc, set_periodic_idx
 
   interface
      module subroutine opr_cpu_dudxyz(du, u, dr, ds, dt, coef)
@@ -311,56 +312,38 @@ contains
   end subroutine opr_cpu_lambda2
 
 
-  subroutine opr_cpu_rotate_cyc_loc(rx, ry, rz, nsize, idir, c_Xh)
+  subroutine opr_cpu_rotate_cyc_vector(rx, ry, rz, idir, coef)
     use iso_c_binding
-    real(kind=rp), intent(inout) :: rx(nsize), ry(nsize), rz(nsize)
-    integer, intent(in) :: nsize, idir
-    type(coef_t), intent(in) :: c_Xh
-    integer :: np, n, lx, ly, lz, pf, pe, i, j, k, lidx, nidx
-    real(kind=rp) :: un(3), x, y, z, dotprod, length, cost, sint, rnor, rtn1
+    real(kind=rp), dimension(:), intent(inout) :: rx, ry, rz
+    integer, intent(in) :: idir
+    type(coef_t), intent(in) :: coef
+    integer :: i, ntot
+    real(kind=rp) :: un(3), x, y, z, theta, dotprod, cost, sint, rnor, rtn1,tol
+    !integer :: nel, lx, ly, lz, pf, pe, j, k, lidx, nidx
+    !nel =  coef%msh%nelv
+    !lx = coef%Xh%lx
+    !ly = coef%Xh%ly
+    !lz = coef%Xh%lz
+    tol = 1.0e-10_rp
+    ntot = coef%dof%size()
 
-    np =  c_Xh%msh%periodic%size
-    lx = c_Xh%Xh%lx
-    ly = c_Xh%Xh%ly
-    lz = c_Xh%Xh%lz
-
-    do n = 1, np
-        do k = 1, lz
-        do j = 1, ly
-        do i = 1, lx
-          !pf = c_Xh%msh%periodic%p_facet_el(n)%x(1) !doesnt work parallel
-          !pe = c_Xh%msh%periodic%p_facet_el(n)%x(2) !doesnt work parallel
-          pf = c_Xh%msh%periodic%facet_el(n)%x(1)
-          pe = c_Xh%msh%periodic%facet_el(n)%x(2)
-          if (index_is_on_facet(i, j, k, lx, ly, lz, pf)) then
-               lidx = linear_index(i, j, k, pe, lx, ly, lz)
-               select case (pf)
-               case(1,2)
-                    nidx = j+(k-1)*ly+(pf-1)*ly*lz+(pe-1)*ly*lz*6
-               case(3,4)
-                    nidx = i+(k-1)*lx+(pf-1)*lx*lz+(pe-1)*lx*lz*6
-               case(5,6)
-                    nidx = i+(j-1)*lx+(pf-1)*lx*ly+(pe-1)*lx*ly*6
-               end select
-
-               un(1) = c_Xh%nx(nidx,1,1,1)
-               un(2) = c_Xh%ny(nidx,1,1,1)
-               x = c_Xh%dof%x(lidx, 1, 1, 1)
-               y = c_Xh%dof%y(lidx, 1, 1, 1)
-               z = c_Xh%dof%z(lidx, 1, 1, 1)
-               dotprod = un(1)*y-un(2)*x
-
-               length = sqrt(un(1)*un(1)+un(2)*un(2))
-               cost = un(1)/length
-               sint = un(2)/length
+    do i = 1, ntot
+          theta = coef%cyc_angle(i, 1, 1, 1)
+          if(abs(theta) .gt. tol) then
+               x = coef%dof%x(i, 1, 1, 1)
+               y = coef%dof%y(i, 1, 1, 1)
+               z = coef%dof%z(i, 1, 1, 1)
+               cost = cos(theta)
+               sint = sin(theta)
+               dotprod = cost*y-sint*x
 
                !do forward (idir=1) or backward rotation (idir=0)
                if (idir.eq.1) then
-                    rnor = rx(lidx)*cost+ry(lidx)*sint
-                    rtn1 =-rx(lidx)*sint+ry(lidx)*cost
+                    rnor = rx(i)*cost+ry(i)*sint
+                    rtn1 =-rx(i)*sint+ry(i)*cost
                else if(idir.eq.0) then
-                    rnor = rx(lidx)*cost-ry(lidx)*sint
-                    rtn1 = rx(lidx)*sint+ry(lidx)*cost
+                    rnor = rx(i)*cost-ry(i)*sint
+                    rtn1 = rx(i)*sint+ry(i)*cost
                else
                     write(*, *) "idir must be 0 or 1 in rotate_cyc"
                     !stop !must be removed if do concurrent is used.
@@ -368,173 +351,292 @@ contains
 
                !invert direction if vector comes out of plane (i.e. dotprod<0)
                if (dotprod.ge.0) then
-                    rx(lidx) = rnor
-                    ry(lidx) = rtn1
+                    rx(i) = rnor
+                    ry(i) = rtn1
                else
-                    rx(lidx) =-rnor
-                    ry(lidx) =-rtn1
+                    rx(i) =-rnor
+                    ry(i) =-rtn1
                end if
           end if
-
-        end do
-        end do
-        end do
     end do
 
-  end subroutine opr_cpu_rotate_cyc_loc
+  end subroutine opr_cpu_rotate_cyc_vector
 
 
-  subroutine opr_cpu_rotate_cyc_vector(rx, ry, rz, idir, c_Xh)
-    real(kind=rp), dimension(:), intent(inout) :: rx, ry, rz
-    integer, intent(in) :: idir
-    type(coef_t), intent(in) :: c_Xh
-    real(kind=rp), allocatable :: periodic_idx(:), periodic_normal_idx(:)
-    integer :: np, n, lx, ly, lz, pf, pe, i, j, k, lidx, nidx
-    real(kind=rp) :: un(3), x, y, z, dotprod, length, cost, sint, rnor, rtn1
-
-    np =  c_Xh%msh%periodic%size
-    lx = c_Xh%Xh%lx
-    ly = c_Xh%Xh%ly
-    lz = c_Xh%Xh%lz
-    call set_periodic_idx(c_Xh, periodic_idx, periodic_normal_idx)
-
-    do n = 1, np*lx*lx
-          nidx = periodic_normal_idx(n)
-          un(1) = c_Xh%nx(nidx,1,1,1)
-          un(2) = c_Xh%ny(nidx,1,1,1)
-
-          lidx = periodic_idx(n)
-          x = c_Xh%dof%x(lidx, 1, 1, 1)
-          y = c_Xh%dof%y(lidx, 1, 1, 1)
-          z = c_Xh%dof%z(lidx, 1, 1, 1)
-
-          dotprod = un(1)*y-un(2)*x
-          length = sqrt(un(1)*un(1)+un(2)*un(2))
-          cost = un(1)/length
-          sint = un(2)/length
-
-          !do forward (idir=1) or backward rotation (idir=0)
-          if (idir.eq.1) then
-               rnor = rx(lidx)*cost+ry(lidx)*sint
-               rtn1 =-rx(lidx)*sint+ry(lidx)*cost
-          else if(idir.eq.0) then
-               rnor = rx(lidx)*cost-ry(lidx)*sint
-               rtn1 = rx(lidx)*sint+ry(lidx)*cost
-          else
-               write(*, *) "idir must be 0 or 1 in rotate_cyc"
-               !stop !must be removed if do concurrent is used.
-          end if
-
-          !invert direction if vector comes out of plane (i.e. dotprod<0)
-          if (dotprod.ge.0) then
-               rx(lidx) = rnor
-               ry(lidx) = rtn1
-          else
-               rx(lidx) =-rnor
-               ry(lidx) =-rtn1
-          end if
-    end do
-
-    end subroutine opr_cpu_rotate_cyc_vector
-
-    subroutine opr_cpu_rotate_cyc_r4(rx, ry, rz, idir, c_Xh)
+  subroutine opr_cpu_rotate_cyc_r4(rx, ry, rz, idir, coef)
+    use iso_c_binding
     real(kind=rp), dimension(:,:,:,:), intent(inout) :: rx, ry, rz
-    integer, intent(in) :: idir
-    type(coef_t), intent(in) :: c_Xh
-    real(kind=rp), allocatable :: periodic_idx(:), periodic_normal_idx(:)
-    integer :: np, n, lx, ly, lz, pf, pe, i, j, k, pi, pj, pk, lidx, nidx
-    real(kind=rp) :: un(3), x, y, z, dotprod, length, cost, sint, rnor, rtn1
-    real(kind=rp) :: periodic_idx_
+    integer, intent(in) ::  idir
+    type(coef_t), intent(in) :: coef
+    integer :: i, ntot
+    real(kind=rp) :: un(3), x, y, z, theta, dotprod, cost, sint, rnor, rtn1, tol
+    !integer :: nel, lx, ly, lz, j, k, lidx, nidx, pf, pe, nel
+    !nel =  coef%msh%nelv
+    !lx = coef%Xh%lx
+    !ly = coef%Xh%ly
+    !lz = coef%Xh%lz
+    tol = 1.0e-15_rp
+    ntot = coef%dof%size()
 
-    np =  c_Xh%msh%periodic%size
-    lx = c_Xh%Xh%lx
-    ly = c_Xh%Xh%ly
-    lz = c_Xh%Xh%lz
-    call set_periodic_idx(c_Xh, periodic_idx, periodic_normal_idx)
+    do i = 1, ntot
+          theta = coef%cyc_angle(i, 1, 1, 1)
+          if(abs(theta) .gt. tol) then
+               x = coef%dof%x(i, 1, 1, 1)
+               y = coef%dof%y(i, 1, 1, 1)
+               z = coef%dof%z(i, 1, 1, 1)
+               cost = cos(theta)
+               sint = sin(theta)
+               dotprod = cost*y-sint*x
+               !can avoid this if block using idir=1 and -1 mutliplied by sint term
+               if (idir.eq.1) then
+                    rnor = rx(i, 1, 1, 1)*cost+ry(i, 1, 1, 1)*sint
+                    rtn1 =-rx(i, 1, 1, 1)*sint+ry(i, 1, 1, 1)*cost
+               else if(idir.eq.0) then
+                    rnor = rx(i, 1, 1, 1)*cost-ry(i, 1, 1, 1)*sint
+                    rtn1 = rx(i, 1, 1, 1)*sint+ry(i, 1, 1, 1)*cost
+               else
+                    write(*, *) "idir must be 0 or 1 in rotate_cyc"
+                    !stop !must be removed if do concurrent is used.
+               end if
 
-    do n = 1, np*lx*lx
-          nidx = periodic_normal_idx(n)
-          un(1) = c_Xh%nx(nidx,1,1,1)
-          un(2) = c_Xh%ny(nidx,1,1,1)
+               !invert direction if vector comes out of plane (i.e. dotprod<0)
+               if (dotprod.ge.0) then
+                    rx(i, 1, 1, 1) = rnor
+                    ry(i, 1, 1, 1) = rtn1
+               else
+                    rx(i, 1, 1, 1) =-rnor
+                    ry(i, 1, 1, 1) =-rtn1
+               end if
+          end if 
+     end do
 
-          lidx = periodic_idx(n)
-          x = c_Xh%dof%x(lidx, 1, 1, 1)
-          y = c_Xh%dof%y(lidx, 1, 1, 1)
-          z = c_Xh%dof%z(lidx, 1, 1, 1)
+  end subroutine opr_cpu_rotate_cyc_r4
 
-          dotprod = un(1)*y-un(2)*x
-          length = sqrt(un(1)*un(1)+un(2)*un(2))
-          cost = un(1)/length
-          sint = un(2)/length
-          !do forward (idir=1) or backward rotation (idir=0)
-          if (idir.eq.1) then
-               rnor = rx(lidx, 1, 1, 1)*cost+ry(lidx, 1, 1, 1)*sint
-               rtn1 =-rx(lidx, 1, 1, 1)*sint+ry(lidx, 1, 1, 1)*cost
-          else if(idir.eq.0) then
-               rnor = rx(lidx, 1, 1, 1)*cost-ry(lidx, 1, 1, 1)*sint
-               rtn1 = rx(lidx, 1, 1, 1)*sint+ry(lidx, 1, 1, 1)*cost
-          else
-               write(*, *) "idir must be 0 or 1 in rotate_cyc"
-               !stop !must be removed if do concurrent is used.
-          end if
+!   subroutine opr_cpu_rotate_cyc_loc(rx, ry, rz, nsize, idir, c_Xh)
+!     use iso_c_binding
+!     real(kind=rp), intent(inout) :: rx(nsize), ry(nsize), rz(nsize)
+!     integer, intent(in) :: nsize, idir
+!     type(coef_t), intent(in) :: c_Xh
+!     integer :: np, n, lx, ly, lz, pf, pe, i, j, k, lidx, nidx
+!     real(kind=rp) :: un(3), x, y, z, dotprod, length, cost, sint, rnor, rtn1
 
-          !invert direction if vector comes out of plane (i.e. dotprod<0)
-          if (dotprod.ge.0) then
-               rx(lidx, 1, 1, 1) = rnor
-               ry(lidx, 1, 1, 1) = rtn1
-          else
-               rx(lidx, 1, 1, 1) =-rnor
-               ry(lidx, 1, 1, 1) =-rtn1
-          end if
-    end do
+!     np =  c_Xh%msh%periodic%size
+!     lx = c_Xh%Xh%lx
+!     ly = c_Xh%Xh%ly
+!     lz = c_Xh%Xh%lz
 
-   end subroutine opr_cpu_rotate_cyc_r4
+!     do n = 1, np
+!         do k = 1, lz
+!         do j = 1, ly
+!         do i = 1, lx
+!           !pf = c_Xh%msh%periodic%p_facet_el(n)%x(1) !doesnt work parallel
+!           !pe = c_Xh%msh%periodic%p_facet_el(n)%x(2) !doesnt work parallel
+!           pf = c_Xh%msh%periodic%facet_el(n)%x(1)
+!           pe = c_Xh%msh%periodic%facet_el(n)%x(2)
+!           if (index_is_on_facet(i, j, k, lx, ly, lz, pf)) then
+!                lidx = linear_index(i, j, k, pe, lx, ly, lz)
+!                select case (pf)
+!                case(1,2)
+!                     nidx = j+(k-1)*ly+(pf-1)*ly*lz+(pe-1)*ly*lz*6
+!                case(3,4)
+!                     nidx = i+(k-1)*lx+(pf-1)*lx*lz+(pe-1)*lx*lz*6
+!                case(5,6)
+!                     nidx = i+(j-1)*lx+(pf-1)*lx*ly+(pe-1)*lx*ly*6
+!                end select
 
-  !cyclic_gpu_mod
-  subroutine set_periodic_idx(coef, periodic_idx, periodic_normal_idx)
-   type(coef_t), intent(in) :: coef
-   real(kind=rp), allocatable, intent(out) :: periodic_idx(:), periodic_normal_idx(:)
-   integer :: np, lx,ly, lz, n, i, j, k, m, pf, pe, nidx
-   np =  coef%msh%periodic%size
-   lx = coef%Xh%lx
-   ly = coef%Xh%ly
-   lz = coef%Xh%lz
+!                un(1) = c_Xh%nx(nidx,1,1,1)
+!                un(2) = c_Xh%ny(nidx,1,1,1)
+!                x = c_Xh%dof%x(lidx, 1, 1, 1)
+!                y = c_Xh%dof%y(lidx, 1, 1, 1)
+!                z = c_Xh%dof%z(lidx, 1, 1, 1)
+!                dotprod = un(1)*y-un(2)*x
 
-   allocate(periodic_idx(np*lx*lx ))
-   allocate(periodic_normal_idx(np*lx*lx ))
-   m = 0
+!                length = sqrt(un(1)*un(1)+un(2)*un(2))
+!                cost = un(1)/length
+!                sint = un(2)/length
 
-   do n = 1, np
-      pf = coef%msh%periodic%facet_el(n)%x(1)
-      pe = coef%msh%periodic%facet_el(n)%x(2)
-      do k = 1, lz
-      do j = 1, ly
-      do i = 1, lx   
-         if (index_is_on_facet(i, j, k, lx, ly, lz, pf)) then
-            select case (pf)
-            case(1,2)
-                  nidx = j+(k-1)*ly+(pf-1)*ly*lz+(pe-1)*ly*lz*6
-            case(3,4)
-                  nidx = i+(k-1)*lx+(pf-1)*lx*lz+(pe-1)*lx*lz*6
-            case(5,6)
-                  nidx = i+(j-1)*lx+(pf-1)*lx*ly+(pe-1)*lx*ly*6
-            end select
-            m = m+1
-            periodic_idx(m) = linear_index(i, j, k, pe, lx, ly, lz)
-            periodic_normal_idx(m) = nidx
-         end if
-      end do
-      end do 
-      end do
-   end do
+!                !do forward (idir=1) or backward rotation (idir=0)
+!                if (idir.eq.1) then
+!                     rnor = rx(lidx)*cost+ry(lidx)*sint
+!                     rtn1 =-rx(lidx)*sint+ry(lidx)*cost
+!                else if(idir.eq.0) then
+!                     rnor = rx(lidx)*cost-ry(lidx)*sint
+!                     rtn1 = rx(lidx)*sint+ry(lidx)*cost
+!                else
+!                     write(*, *) "idir must be 0 or 1 in rotate_cyc"
+!                     !stop !must be removed if do concurrent is used.
+!                end if
 
-   if ( m .ne. np*lx*lx ) then
-      call neko_error('Periodic index lengths are not consistent.')
-      !this assumes lx=ly=lz. if the assumption fails, dry run can be done 
-      !to obtain m first, allocate arrays and then come back to actual iterations.
-   end if
+!                !invert direction if vector comes out of plane (i.e. dotprod<0)
+!                if (dotprod.ge.0) then
+!                     rx(lidx) = rnor
+!                     ry(lidx) = rtn1
+!                else
+!                     rx(lidx) =-rnor
+!                     ry(lidx) =-rtn1
+!                end if
+!           end if
 
-  end subroutine set_periodic_idx
+!         end do
+!         end do
+!         end do
+!     end do
 
+!   end subroutine opr_cpu_rotate_cyc_loc
+
+
+
+
+!   subroutine opr_cpu_rotate_cyc_vector(rx, ry, rz, idir, c_Xh)
+!     real(kind=rp), dimension(:), intent(inout) :: rx, ry, rz
+!     integer, intent(in) :: idir
+!     type(coef_t), intent(in) :: c_Xh
+!     real(kind=rp), allocatable :: periodic_idx(:), periodic_normal_idx(:)
+!     integer :: np, n, lx, ly, lz, pf, pe, i, j, k, lidx, nidx
+!     real(kind=rp) :: un(3), x, y, z, dotprod, length, cost, sint, rnor, rtn1
+
+!     np =  c_Xh%msh%periodic%size
+!     lx = c_Xh%Xh%lx
+!     ly = c_Xh%Xh%ly
+!     lz = c_Xh%Xh%lz
+!     call set_periodic_idx(c_Xh, periodic_idx, periodic_normal_idx)
+
+!     do n = 1, np*lx*lx
+!           nidx = periodic_normal_idx(n)
+!           un(1) = c_Xh%nx(nidx,1,1,1)
+!           un(2) = c_Xh%ny(nidx,1,1,1)
+
+!           lidx = periodic_idx(n)
+!           x = c_Xh%dof%x(lidx, 1, 1, 1)
+!           y = c_Xh%dof%y(lidx, 1, 1, 1)
+!           z = c_Xh%dof%z(lidx, 1, 1, 1)
+
+!           dotprod = un(1)*y-un(2)*x
+!           length = sqrt(un(1)*un(1)+un(2)*un(2))
+!           cost = un(1)/length
+!           sint = un(2)/length
+
+!           !do forward (idir=1) or backward rotation (idir=0)
+!           if (idir.eq.1) then
+!                rnor = rx(lidx)*cost+ry(lidx)*sint
+!                rtn1 =-rx(lidx)*sint+ry(lidx)*cost
+!           else if(idir.eq.0) then
+!                rnor = rx(lidx)*cost-ry(lidx)*sint
+!                rtn1 = rx(lidx)*sint+ry(lidx)*cost
+!           else
+!                write(*, *) "idir must be 0 or 1 in rotate_cyc"
+!                !stop !must be removed if do concurrent is used.
+!           end if
+
+!           !invert direction if vector comes out of plane (i.e. dotprod<0)
+!           if (dotprod.ge.0) then
+!                rx(lidx) = rnor
+!                ry(lidx) = rtn1
+!           else
+!                rx(lidx) =-rnor
+!                ry(lidx) =-rtn1
+!           end if
+!     end do
+
+!     end subroutine opr_cpu_rotate_cyc_vector
+
+!     subroutine opr_cpu_rotate_cyc_r4(rx, ry, rz, idir, c_Xh)
+!     real(kind=rp), dimension(:,:,:,:), intent(inout) :: rx, ry, rz
+!     integer, intent(in) :: idir
+!     type(coef_t), intent(in) :: c_Xh
+!     real(kind=rp), allocatable :: periodic_idx(:), periodic_normal_idx(:)
+!     integer :: np, n, lx, ly, lz, pf, pe, i, j, k, pi, pj, pk, lidx, nidx
+!     real(kind=rp) :: un(3), x, y, z, dotprod, length, cost, sint, rnor, rtn1
+!     real(kind=rp) :: periodic_idx_
+
+!     np =  c_Xh%msh%periodic%size
+!     lx = c_Xh%Xh%lx
+!     ly = c_Xh%Xh%ly
+!     lz = c_Xh%Xh%lz
+!     call set_periodic_idx(c_Xh, periodic_idx, periodic_normal_idx)
+
+!     do n = 1, np*lx*lx
+!           nidx = periodic_normal_idx(n)
+!           un(1) = c_Xh%nx(nidx,1,1,1)
+!           un(2) = c_Xh%ny(nidx,1,1,1)
+
+!           lidx = periodic_idx(n)
+!           x = c_Xh%dof%x(lidx, 1, 1, 1)
+!           y = c_Xh%dof%y(lidx, 1, 1, 1)
+!           z = c_Xh%dof%z(lidx, 1, 1, 1)
+
+!           dotprod = un(1)*y-un(2)*x
+!           length = sqrt(un(1)*un(1)+un(2)*un(2))
+!           cost = un(1)/length
+!           sint = un(2)/length
+!           !do forward (idir=1) or backward rotation (idir=0)
+          ! if (idir.eq.1) then
+          !      rnor = rx(lidx, 1, 1, 1)*cost+ry(lidx, 1, 1, 1)*sint
+          !      rtn1 =-rx(lidx, 1, 1, 1)*sint+ry(lidx, 1, 1, 1)*cost
+          ! else if(idir.eq.0) then
+          !      rnor = rx(lidx, 1, 1, 1)*cost-ry(lidx, 1, 1, 1)*sint
+          !      rtn1 = rx(lidx, 1, 1, 1)*sint+ry(lidx, 1, 1, 1)*cost
+          ! else
+          !      write(*, *) "idir must be 0 or 1 in rotate_cyc"
+          !      !stop !must be removed if do concurrent is used.
+          ! end if
+
+          ! !invert direction if vector comes out of plane (i.e. dotprod<0)
+          ! if (dotprod.ge.0) then
+          !      rx(lidx, 1, 1, 1) = rnor
+          !      ry(lidx, 1, 1, 1) = rtn1
+          ! else
+          !      rx(lidx, 1, 1, 1) =-rnor
+          !      ry(lidx, 1, 1, 1) =-rtn1
+          ! end if
+!     end do
+
+!    end subroutine opr_cpu_rotate_cyc_r4
+
+!   !cyclic_gpu_mod
+!   subroutine set_periodic_idx(coef, periodic_idx, periodic_normal_idx)
+!    type(coef_t), intent(in) :: coef
+!    real(kind=rp), allocatable, intent(out) :: periodic_idx(:), periodic_normal_idx(:)
+!    integer :: np, lx,ly, lz, n, i, j, k, m, pf, pe, nidx
+!    np =  coef%msh%periodic%size
+!    lx = coef%Xh%lx
+!    ly = coef%Xh%ly
+!    lz = coef%Xh%lz
+
+!    allocate(periodic_idx(np*lx*lx ))
+!    allocate(periodic_normal_idx(np*lx*lx ))
+!    m = 0
+
+!    do n = 1, np
+!       pf = coef%msh%periodic%facet_el(n)%x(1)
+!       pe = coef%msh%periodic%facet_el(n)%x(2)
+!       do k = 1, lz
+!       do j = 1, ly
+!       do i = 1, lx   
+!          if (index_is_on_facet(i, j, k, lx, ly, lz, pf)) then
+!             select case (pf)
+!             case(1,2)
+!                   nidx = j+(k-1)*ly+(pf-1)*ly*lz+(pe-1)*ly*lz*6
+!             case(3,4)
+!                   nidx = i+(k-1)*lx+(pf-1)*lx*lz+(pe-1)*lx*lz*6
+!             case(5,6)
+!                   nidx = i+(j-1)*lx+(pf-1)*lx*ly+(pe-1)*lx*ly*6
+!             end select
+!             m = m+1
+!             periodic_idx(m) = linear_index(i, j, k, pe, lx, ly, lz)
+!             periodic_normal_idx(m) = nidx
+!          end if
+!       end do
+!       end do 
+!       end do
+!    end do
+
+!    if ( m .ne. np*lx*lx ) then
+!       call neko_error('Periodic index lengths are not consistent.')
+!       !this assumes lx=ly=lz. if the assumption fails, dry run can be done 
+!       !to obtain m first, allocate arrays and then come back to actual iterations.
+!    end if
+
+!   end subroutine set_periodic_idx
 
 end module opr_cpu

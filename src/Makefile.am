@@ -228,7 +228,7 @@ neko_fortran_SOURCES = \
 	fluid/fluid_stats.f90\
 	fluid/mean_sqr_flow.f90\
 	fluid/flow_profile.f90\
-	fluid/flow_ic.f90\
+	fluid/flow_ic.f90 \
 	fluid/advection.f90\
 	fluid/advection_fctry.f90\
 	fluid/bcknd/advection/adv_dealias.f90\
@@ -357,6 +357,8 @@ neko_fortran_SOURCES = \
 	wall_models/spalding.f90\
 	wall_models/wall_model_fctry.f90\
 	neko.f90
+
+fluid/flow_ic.o: math/operators.mod
 
 neko_c_SOURCES = \
 	comm/comm_wrapper.c\
