@@ -169,11 +169,11 @@ contains
     call opcolv(w1%x, w2%x, w3%x, c_Xh%B, gdim, n)
     !cyclic_mod_checked - this is opdssum from plan4.f/op_curl
     !write(*, *) 'Rotate from opr_cpu_curl'
-    call opr_cpu_rotate_cyc_r4(w1%x, w2%x, w3%x, 1, c_Xh)
+    if(c_Xh%cyclic) call opr_cpu_rotate_cyc_r4(w1%x, w2%x, w3%x, 1, c_Xh)
     call c_Xh%gs_h%op(w1, GS_OP_ADD)
     call c_Xh%gs_h%op(w2, GS_OP_ADD)
     call c_Xh%gs_h%op(w3, GS_OP_ADD)
-    call opr_cpu_rotate_cyc_r4(w1%x, w2%x, w3%x, 0, c_Xh)
+    if(c_Xh%cyclic) call opr_cpu_rotate_cyc_r4(w1%x, w2%x, w3%x, 0, c_Xh)
     call opcolv(w1%x, w2%x, w3%x, c_Xh%Binv, gdim, n)
 
   end subroutine opr_cpu_curl

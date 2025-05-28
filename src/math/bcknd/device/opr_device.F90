@@ -668,14 +668,14 @@ contains
     call device_opcolv(w1%x_d, w2%x_d, w3%x_d, c_Xh%B_d, gdim, n)
 
     if (present(event)) then
-       call opr_device_rotate_cyc_r4(w1%x, w2%x, w3%x, 1, c_Xh)
+       if(c_Xh%cyclic) call opr_device_rotate_cyc_r4(w1%x, w2%x, w3%x, 1, c_Xh)
        call c_Xh%gs_h%op(w1, GS_OP_ADD, event)
        call device_event_sync(event)
        call c_Xh%gs_h%op(w2, GS_OP_ADD, event)
        call device_event_sync(event)
        call c_Xh%gs_h%op(w3, GS_OP_ADD, event)
        call device_event_sync(event)
-       call opr_device_rotate_cyc_r4(w1%x, w2%x, w3%x, 0, c_Xh)
+       if(c_Xh%cyclic) call opr_device_rotate_cyc_r4(w1%x, w2%x, w3%x, 0, c_Xh)
 
     else
        call opr_device_rotate_cyc_r4(w1%x, w2%x, w3%x, 1, c_Xh)
