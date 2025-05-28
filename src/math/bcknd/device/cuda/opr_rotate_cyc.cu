@@ -1,22 +1,23 @@
+#include <string.h>
+#include <stdlib.h>
 #include <stdio.h>
-#include "rotate_cyc_kernel.h"
 #include <device/device_config.h>
 #include <device/cuda/check.h>
+#include "rotate_kernel.h"
+
 
 
 extern "C" {
-//do we need any includes?
 
 void cuda_rotate_cyc(void *rx, void *ry, void *rz,
                     void *x, void *y, void *z,
                     void *cyclic_angle,
-                    void *idir, int *nel, int *lx){  
+                    int *idir, int *nel, int *lx){  
     
     const dim3 nthrds(1024, 1, 1);
     const dim3 nblcks((*nel), 1, 1);
     const cudaStream_t stream = (cudaStream_t) glb_cmd_queue;
-                    
-
+    
 #define CASE(LX)                                                                        \
     case LX:                                                                            \
         rotate_cyc_kernel<real, LX, 1024>                                               \
@@ -42,6 +43,7 @@ void cuda_rotate_cyc(void *rx, void *ry, void *rz,
             fprintf(stderr, __FILE__ ": size not supported: %d\n", *lx);
             exit(1);
         }
+    }
 }
 }
 

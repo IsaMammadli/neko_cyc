@@ -96,6 +96,7 @@ module coefs
      real(kind=rp), allocatable :: ny(:,:,:,:)   !< y-direction of facet normal
      real(kind=rp), allocatable :: nz(:,:,:,:)   !< z-direction of facet normal
      real(kind=rp), allocatable :: cyc_angle(:,:,:,:) !cyclic_mod_coef
+     logical :: cyclic = .false. !cyclic_mod_coef
      !> Pointers to main fields
 
      real(kind=rp) :: volume
@@ -1181,8 +1182,8 @@ contains
   subroutine coef_compute_cyclic_angle(coef)
     type(coef_t), intent(inout) :: coef
     integer :: i, j, k, e, n, lx, ly, lz, np, pf, pe, ntot
-    real(kind=rp) :: un(3), cost, length
-
+    real(kind=rp) :: un(3), cost, length, sum_n(3), sum
+    
     np =  coef%msh%periodic%size
     lx = coef%Xh%lx
     ly = coef%Xh%ly
@@ -1200,11 +1201,13 @@ contains
             !length = sqrt(un(1)*un(1)+un(2)*un(2))
             !cost = un(1)/length !sint = un(2)/length
             coef%cyc_angle(i, j, k, pe) = atan2(un(2), un(1))
+            !sum_n = sum_n+un
          end if
       end do
       end do 
       end do
     end do
+
   end subroutine coef_compute_cyclic_angle 
 
 

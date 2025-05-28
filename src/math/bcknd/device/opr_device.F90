@@ -48,7 +48,7 @@ module opr_device
 
   public :: opr_device_dudxyz, opr_device_opgrad, opr_device_cdtp, &
        opr_device_conv1, opr_device_curl, opr_device_cfl, opr_device_lambda2, &
-       opr_device_rotate_cyc
+       opr_device_rotate_cyc_r4, opr_device_rotate_cyc_r1
 
 #ifdef HAVE_HIP
   interface
@@ -229,6 +229,20 @@ module opr_device
        integer(c_int) :: nel, lx
      end function cuda_cfl
   end interface
+
+  interface
+     subroutine cuda_rotate_cyc(rx_d, ry_d, rz_d, & 
+          x_d, y_d, z_d, &
+          cyc_angle_d, idir, nelv, lx) &
+          bind(c, name = 'cuda_rotate_cyc')
+       use, intrinsic :: iso_c_binding
+       type(c_ptr), value :: rx_d, ry_d, rz_d
+       type(c_ptr), value :: x_d, y_d, z_d
+       type(c_ptr), value :: cyc_angle_d
+       integer(c_int) :: idir, nelv, lx
+     end subroutine cuda_rotate_cyc
+  end interface
+
 #elif HAVE_OPENCL
   interface
      subroutine opencl_dudxyz(du_d, u_d, dr_d, ds_d, dt_d, &
@@ -654,16 +668,21 @@ contains
     call device_opcolv(w1%x_d, w2%x_d, w3%x_d, c_Xh%B_d, gdim, n)
 
     if (present(event)) then
+       call opr_device_rotate_cyc_r4(w1%x, w2%x, w3%x, 1, c_Xh)
        call c_Xh%gs_h%op(w1, GS_OP_ADD, event)
        call device_event_sync(event)
        call c_Xh%gs_h%op(w2, GS_OP_ADD, event)
        call device_event_sync(event)
        call c_Xh%gs_h%op(w3, GS_OP_ADD, event)
        call device_event_sync(event)
+       call opr_device_rotate_cyc_r4(w1%x, w2%x, w3%x, 0, c_Xh)
+
     else
+       call opr_device_rotate_cyc_r4(w1%x, w2%x, w3%x, 1, c_Xh)
        call c_Xh%gs_h%op(w1, GS_OP_ADD)
        call c_Xh%gs_h%op(w2, GS_OP_ADD)
        call c_Xh%gs_h%op(w3, GS_OP_ADD)
+       call opr_device_rotate_cyc_r4(w1%x, w2%x, w3%x, 0, c_Xh)
     end if
 
     call device_opcolv(w1%x_d, w2%x_d, w3%x_d, c_Xh%Binv_d, gdim, n)
@@ -714,28 +733,56 @@ contains
 #endif
   end function opr_device_cfl
 
-!   subroutine opr_device_rotate_cyc(rx, ry, rz, idir, coef)
-!     real(kind=rp), dimension(Xh%lx, Xh%ly, Xh%lz, nelv) :: u, v, w !dimensions vector or r4
-!     integer :: idir
-!     type(coef_t) :: coef
-!     type(c_ptr) :: rx_d, ry_d, rz_d
+  !rank 4
+  subroutine opr_device_rotate_cyc_r4(rx, ry, rz, idir, coef)
+    type(coef_t) :: coef
+    integer :: idir
+    real(rp), dimension(coef%Xh%lx, coef%Xh%ly, coef%Xh%lz, coef%msh%nelv) :: &
+              rx, ry, rz
+    type(c_ptr) :: rx_d, ry_d, rz_d
 
-!     rx_d = device_get_ptr(rx)
-!     ry_d = device_get_ptr(ry)
-!     rz_d = device_get_ptr(rz)
 
-! #ifdef HAVE_HIP
-!      call neko_error('No device backend configured for rotate_cyc')
-! #elif HAVE_CUDA
-!     call cuda_rotate_cyc(rx_d, ry_d, rz_d, &
-!          coef%dof%x_d, coef%dof%y_d, coef%dof%z_d, &
-!          coef%cyc_angle_d, &
-!          idir, coef%msh%nelv, coef%Xh%lx)
-! #elif HAVE_OPENCL
-!     call neko_error('No device backend configured for rotate_cyc')
-! #else
-!     call neko_error('No device backend configured for rotate_cyc')
-! #endif
-!   end subroutine opr_device_rotate_cyc
+    rx_d = device_get_ptr(rx)
+    ry_d = device_get_ptr(ry)
+    rz_d = device_get_ptr(rz)
+
+#ifdef HAVE_HIP
+     call neko_error('No device backend configured for rotate_cyc')
+#elif HAVE_CUDA
+    call cuda_rotate_cyc(rx_d, ry_d, rz_d, &
+         coef%dof%x_d, coef%dof%y_d, coef%dof%z_d, &
+         coef%cyc_angle_d, &
+         idir, coef%msh%nelv, coef%Xh%lx)
+#elif HAVE_OPENCL
+    call neko_error('No device backend configured for rotate_cyc')
+#else
+    call neko_error('No device backend configured for rotate_cyc')
+#endif
+  end subroutine opr_device_rotate_cyc_r4
+
+subroutine opr_device_rotate_cyc_r1(rx, ry, rz, idir, coef)
+     type(coef_t) :: coef
+     integer :: idir
+     real(rp), dimension(coef%Xh%lx*coef%Xh%ly*coef%Xh%lz*coef%msh%nelv) :: &
+               rx, ry, rz
+     type(c_ptr) :: rx_d, ry_d, rz_d
+ 
+     rx_d = device_get_ptr(rx)
+     ry_d = device_get_ptr(ry)
+     rz_d = device_get_ptr(rz)
+ 
+#ifdef HAVE_HIP
+      call neko_error('No device backend configured for rotate_cyc')
+#elif HAVE_CUDA
+     call cuda_rotate_cyc(rx_d, ry_d, rz_d, &
+          coef%dof%x_d, coef%dof%y_d, coef%dof%z_d, &
+          coef%cyc_angle_d, &
+          idir, coef%msh%nelv, coef%Xh%lx)
+#elif HAVE_OPENCL
+     call neko_error('No device backend configured for rotate_cyc')
+#else
+     call neko_error('No device backend configured for rotate_cyc')
+#endif
+   end subroutine opr_device_rotate_cyc_r1
 
 end module opr_device

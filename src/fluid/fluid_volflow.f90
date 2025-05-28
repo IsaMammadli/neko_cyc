@@ -107,8 +107,8 @@ module fluid_volflow
    contains
      procedure, pass(this) :: init => fluid_vol_flow_init
      procedure, pass(this) :: free => fluid_vol_flow_free
-     procedure, pass(this) :: makebf_str => makebf_str_helix
-     procedure, pass(this) :: get_ubar_str => get_ubar_str_helix
+     procedure, pass(this) :: makebf_str => makebf_str_field
+     procedure, pass(this) :: get_ubar_str => get_ubar_str_field
      !procedure, pass(this) :: adjust => fluid_vol_flow
      !procedure, private, pass(this) :: compute => fluid_vol_flow_compute
 
@@ -205,6 +205,8 @@ contains
    if (this%flow_dir .le. 3) then
       this%adjust => fluid_vol_flow
       this%compute => fluid_vol_flow_compute
+      this%scratch = scratch_registry_t(dm_Xh, 3, 1) 
+
    else if (this%flow_dir  .eq. 4) then
       this%adjust => fluid_vol_flow_str
       this%compute => fluid_vol_flow_compute_str
@@ -222,6 +224,8 @@ contains
       call json_get(params, 'case.fluid.flow_rate_force.pitch', this%pitch)
       call json_get(params, 'case.fluid.flow_rate_force.rp', this%Rpipe)
       call json_get(params, 'case.fluid.flow_rate_force.rc', this%Rc)
+      this%scratch = scratch_registry_t(dm_Xh, 11, 1) 
+
       !write(*, *) 'HELIX pitch, Rpipe, Rc', this%pitch, this%Rpipe, this%Rc
    end if
 
@@ -235,7 +239,6 @@ contains
 
 
 
-    this%scratch = scratch_registry_t(dm_Xh, 3, 1) 
 
   end subroutine fluid_vol_flow_init
 
@@ -573,16 +576,26 @@ contains
     real(kind=rp) :: zlmin, zlmax
     type(ksp_monitor_t) :: ksp_results(4)
     type(field_t), pointer :: ta1, ta2, ta3
-    integer :: temp_indices(3)
-    real(kind=rp), allocatable :: vxc(:,:,:,:), vyc(:,:,:,:), vzc(:,:,:,:), p_res_y(:,:,:,:), p_res_z(:,:,:,:)
-    !type(field_t), pointer :: fx, fy, fz
-    real(kind=rp), allocatable, dimension(:,:,:,:) :: fx, fy, fz
-    !type(field_t), pointer :: helix_data
+    integer :: temp_indices(11)
+    !real(kind=rp), allocatable :: vxc(:,:,:,:), vyc(:,:,:,:), vzc(:,:,:,:), p_res_y(:,:,:,:), p_res_z(:,:,:,:)
+    type(field_t), pointer :: fx, fy, fz, vxc, vyc, vzc, p_resy, p_resz
+    !real(kind=rp), allocatable, dimension(:,:,:,:) :: fx, fy, fz
 
 
     call this%scratch%request_field(ta1, temp_indices(1))
     call this%scratch%request_field(ta2, temp_indices(2))
     call this%scratch%request_field(ta3, temp_indices(3))
+
+    call this%scratch%request_field(fx,  temp_indices(4))
+    call this%scratch%request_field(fy,  temp_indices(5))
+    call this%scratch%request_field(fz,  temp_indices(6))
+
+    call this%scratch%request_field(vxc, temp_indices(7))
+    call this%scratch%request_field(vyc, temp_indices(8))
+    call this%scratch%request_field(vzc, temp_indices(9))
+    
+    call this%scratch%request_field(p_resy, temp_indices(10))
+    call this%scratch%request_field(p_resz, temp_indices(11))
 
     associate(msh => c_Xh%msh, p_vol => this%p_vol, &
          u_vol => this%u_vol, v_vol => this%v_vol, w_vol => this%w_vol)
@@ -603,26 +616,14 @@ contains
    !--------plan4_vol
       !   Compute pressure
       !TODOS: ortho exist . Check fluid_pnpn line 750
-      allocate(vxc(c_Xh%Xh%lx, c_Xh%Xh%ly, c_Xh%Xh%lz, c_Xh%msh%nelv))
-      allocate(vyc(c_Xh%Xh%lx, c_Xh%Xh%ly, c_Xh%Xh%lz, c_Xh%msh%nelv))
-      allocate(vzc(c_Xh%Xh%lx, c_Xh%Xh%ly, c_Xh%Xh%lz, c_Xh%msh%nelv))
-      allocate(fx(c_Xh%Xh%lx, c_Xh%Xh%ly, c_Xh%Xh%lz, c_Xh%msh%nelv))
-      allocate(fy(c_Xh%Xh%lx, c_Xh%Xh%ly, c_Xh%Xh%lz, c_Xh%msh%nelv))
-      allocate(fz(c_Xh%Xh%lx, c_Xh%Xh%ly, c_Xh%Xh%lz, c_Xh%msh%nelv))
-
-      !call makebf_str(u_vol%x, v_vol%x, w_vol%x, c_Xh) ! Store Bf in uvol,vvol,wvol
-      !for gs_Xh%op field_t is needed. So we cannot pass vxc but u_vol can be used
-      !call gs_Xh%op(u_vol, GS_OP_ADD) !call opdssum   (vxc,vyc,vzc) ! Where is the opdssum
-      !call gs_Xh%op(v_vol, GS_OP_ADD)
-      !call gs_Xh%op(w_vol, GS_OP_ADD)
-      call this%makebf_str(fx, fy, fz, c_Xh)
+       call this%makebf_str(fx, fy, fz, c_Xh)
       !cyclic_mod_checked
       !write(*, *) 'Rotate from fluid_volflow 2'
-      call rotate_cyc(fx, fy, fz, 1, c_Xh)
-      call gs_Xh%op(fx, n, GS_OP_ADD)
-      call gs_Xh%op(fy, n, GS_OP_ADD)
-      call gs_Xh%op(fz, n, GS_OP_ADD)
-      call rotate_cyc(fx, fy, fz, 0, c_Xh)
+      call rotate_cyc(fx%x, fy%x, fz%x, 1, c_Xh)
+      call gs_Xh%op(fx, GS_OP_ADD)
+      call gs_Xh%op(fy, GS_OP_ADD)
+      call gs_Xh%op(fz, GS_OP_ADD)
+      call rotate_cyc(fx%x, fy%x, fz%x, 0, c_Xh)
 
       !this%case%fluid%c_Xh%gs_h%op(this%veldiv,GS_OP_ADD) ! for opdssum
       if (NEKO_BCKND_DEVICE .eq. 1) then
@@ -634,23 +635,21 @@ contains
       else
          !do i = 1, n
          do concurrent (i = 1: n)
-            vxc(i,1,1,1) = fx(i,1,1,1)*c_Xh%Binv(i,1,1,1)/rho !after this we start using vxc
-            vyc(i,1,1,1) = fy(i,1,1,1)*c_Xh%Binv(i,1,1,1)/rho
-            vzc(i,1,1,1) = fz(i,1,1,1)*c_Xh%Binv(i,1,1,1)/rho
+            vxc%x(i,1,1,1) = fx%x(i,1,1,1)*c_Xh%Binv(i,1,1,1)/rho !after this we start using vxc
+            vyc%x(i,1,1,1) = fy%x(i,1,1,1)*c_Xh%Binv(i,1,1,1)/rho
+            vzc%x(i,1,1,1) = fz%x(i,1,1,1)*c_Xh%Binv(i,1,1,1)/rho
          end do
       end if
 
       !first argument stores the result
-      allocate(p_res_y(c_Xh%Xh%lx, c_Xh%Xh%ly, c_Xh%Xh%lz, c_Xh%msh%nelv))
-      allocate(p_res_z(c_Xh%Xh%lx, c_Xh%Xh%ly, c_Xh%Xh%lz, c_Xh%msh%nelv))
-      call cdtp(p_res%x,   vxc, c_Xh%drdx, c_Xh%dsdx, c_Xh%dtdx, c_Xh) !2nd argument c_Xh%h1 changed to vxc
-      call cdtp(p_res_y,   vyc, c_Xh%drdy, c_Xh%dsdy, c_Xh%dtdy, c_Xh) !2nd argument c_Xh%h1 changed to vycc
-      call cdtp(p_res_z,   vzc, c_Xh%drdz, c_Xh%dsdz, c_Xh%dtdz, c_Xh) !2nd argument c_Xh%h1 changed to vzc !skipped if argument for 2D
+      call cdtp(p_res%x,   vxc%x, c_Xh%drdx, c_Xh%dsdx, c_Xh%dtdx, c_Xh) !2nd argument c_Xh%h1 changed to vxc
+      call cdtp(p_resy%x,  vyc%x, c_Xh%drdy, c_Xh%dsdy, c_Xh%dtdy, c_Xh) !2nd argument c_Xh%h1 changed to vycc
+      call cdtp(p_resz%x,  vzc%x, c_Xh%drdz, c_Xh%dsdz, c_Xh%dtdz, c_Xh) !2nd argument c_Xh%h1 changed to vzc !skipped if argument for 2D
 
       if (NEKO_BCKND_DEVICE .eq. 1) then
          !FIX!call device_add3(p_res%x_d, p_res_y, p_res_z, n) ! instead of add2 in 2 steps, used add3
       else
-         call add3(p_res%x, p_res_y, p_res_z, n)
+         call add3(p_res%x, p_resy%x, p_resz%x, n)
       end if
       
       !Untouched as plan4_vol and plan4_vol_azm are same here
@@ -687,9 +686,9 @@ contains
          end do
       else
          do concurrent (i = 1: n)
-            u_res%x(i,1,1,1) = u_res%x(i,1,1,1)+ta1%x(i,1,1,1)*vxc(i,1,1,1)
-            v_res%x(i,1,1,1) = v_res%x(i,1,1,1)+ta2%x(i,1,1,1)*vyc(i,1,1,1)
-            w_res%x(i,1,1,1) = w_res%x(i,1,1,1)+ta3%x(i,1,1,1)*vzc(i,1,1,1)
+            u_res%x(i,1,1,1) = u_res%x(i,1,1,1)+ta1%x(i,1,1,1)*vxc%x(i,1,1,1)
+            v_res%x(i,1,1,1) = v_res%x(i,1,1,1)+ta2%x(i,1,1,1)*vyc%x(i,1,1,1)
+            w_res%x(i,1,1,1) = w_res%x(i,1,1,1)+ta3%x(i,1,1,1)*vzc%x(i,1,1,1)
          end do
       end if
 
@@ -716,7 +715,6 @@ contains
       call pc_vel%update()
       ksp_results(2:4) = ksp_vel%solve_coupled(Ax_vel, &
            u_vol, v_vol, w_vol, &
-           !fx, fy, fz, &
            u_res%x, v_res%x, w_res%x, &
            n, c_Xh, &
            bclst_du, bclst_dv, bclst_dw, &
@@ -727,38 +725,13 @@ contains
       if (NEKO_BCKND_DEVICE .eq. 1) then 
             !FIX!this%base_flow = get_ubar_str(u_vol,v_vol,w_vol, c_Xh) 
       else    
-            this%base_flow = this%get_ubar_str(u_vol%x, v_vol%x, w_vol%x, c_Xh) 
+            this%base_flow = this%get_ubar_str(u_vol, v_vol, w_vol, c_Xh) 
             !this%base_flow = get_ubar_str(vxc,vyc,vzc, c_Xh) 
       end if
 
       !TODOS: if(ifexplvis) may this be needed in case of cyclic
 
     end associate
-    if (allocated(vxc)) then
-       deallocate(vxc)
-    end if
-    if (allocated(vyc)) then
-       deallocate(vyc)
-    end if
-    if (allocated(vzc)) then
-       deallocate(vzc)
-    end if
-    if (allocated(fx)) then
-       deallocate(fx)
-    end if
-    if (allocated(fy)) then
-       deallocate(fy)
-    end if
-    if (allocated(fz)) then
-       deallocate(fz)
-    end if
-    if (allocated(p_res_y)) then
-       deallocate(p_res_y)
-    end if
-    if (allocated(p_res_z)) then
-       deallocate(p_res_z)
-    end if
-    
     call this%scratch%relinquish_field(temp_indices)
   end subroutine fluid_vol_flow_compute_str
 
@@ -816,7 +789,7 @@ contains
       !DELETED: if (ifcomp .gt. 0d0) then call this%compute(u_res, v_res, w_res, p_res, &
       !DELETED: if (NEKO_BCKND_DEVICE .eq. 1) then
       !DELETED: if (this%avflow) then
-      current_ubar = this%get_ubar_str(u%x, v%x, w%x, c_Xh)
+      current_ubar = this%get_ubar_str(u, v, w, c_Xh)
       target_ubar = this%flow_rate ! 1.0 !param(56) = 1.0
       delta_flow = target_ubar - current_ubar
       scale = delta_flow / this%base_flow
@@ -841,6 +814,97 @@ contains
   
 
 !-----------------------------STR helpers---------------------------------------------------
+   subroutine makebf_str_field(this, bax, bay,baz, c_Xh)
+      implicit none
+      !c_Xh is of type coef_t and c_Xh%Xh is space_t
+      !xm1,ym1,zm1 can be accessed from c_Xh%dof%x(i,1,1,1) - which is of type dofmap_t
+      class(fluid_volflow_t), intent(inout) :: this
+      !real(kind=rp), intent(inout) :: bax(:,:,:,:), bay(:,:,:,:), baz(:,:,:,:)
+      type(field_t), intent(inout) :: bax, bay, baz
+      type(coef_t), intent(inout) :: c_Xh
+      real(kind=rp) :: Rc, pitch, delta, phi, pitch_s
+      integer :: n, i
+      real(kind=rp) :: pi, x, y, z, y0, alpha, angle_t, r, dpds 
+   
+      pi = 4*atan(1.0)
+      !required scalars
+      Rc    = this%Rc
+      pitch = this%pitch
+
+      pitch_s = pitch/(2*pi)
+      phi = atan2(pitch_s, Rc)
+      delta = Rc/(Rc**2+pitch_s**2)
+      !tau = pitch_s/(Rc**2+pitch_s**2) !not needed for calculations
+      n = c_Xh%dof%size()
+      !if (n .ne. size(bax)) then
+      !   write(*,*) "MAKEBF_STR ERROR: Mismatch between sizes: Expected", n, " but got ", size(bax)
+      !   stop
+      !endif 
+
+      do concurrent (i = 1: n)
+         x = this%xax%x(i,1,1,1) ! Corresponding toroid when pitch_s = 0 for the helix
+         y = this%yax%x(i,1,1,1) 
+         z = this%zax%x(i,1,1,1)
+         y0 = sqrt(x**2+y**2) - Rc !gives us y0 - y of straight pipe before deformation (when x is axial direction).  
+         alpha = atan2(y0, z)
+         r = sqrt(y0**2+z**2) !r of helical coordinate system (s, r, theta)
+
+         dpds = 1./abs(1+delta*r*sin(alpha))   
+         angle_t = atan2(x,y) !phi measured clockwise from 12 noon
+
+         bax%x(i,1,1,1) = dpds*cos(phi)*cos(angle_t)*c_Xh%B(i,1,1,1)
+         bay%x(i,1,1,1) =-dpds*cos(phi)*sin(angle_t)*c_Xh%B(i,1,1,1)
+         baz%x(i,1,1,1) = dpds*sin(phi)*c_Xh%B(i,1,1,1)
+      end do
+   end subroutine makebf_str_field
+
+
+
+   function get_ubar_str_field(this, u, v, w, c_Xh) result(ubar)
+      implicit none
+      class(fluid_volflow_t), intent(inout) :: this
+      type(field_t), intent(inout) :: u, v, w
+      type(coef_t), intent(inout) :: c_Xh
+      real(kind=rp) :: Rc, pitch, delta, phi, pitch_s, pi
+      real(kind=rp) :: num, den
+      real(kind=rp) :: x, y, z, y0, alpha, angle_t, r, us, usr, ubar, ri
+      integer :: n, i, ierr
+
+      pi = 4*atan(1.0)
+
+      n = c_Xh%dof%size()
+      num=0.
+      den=0.
+      Rc = this%Rc
+      pitch = this%pitch
+      pitch_s = pitch/(2*pi)
+      phi   = atan2(pitch_s, Rc)
+      delta = Rc/(Rc**2+pitch_s**2)
+
+      do concurrent (i = 1: n)
+         x = this%xax%x(i,1,1,1) ! Corresponding toroid when pitch_s = 0 for the helix
+         y = this%yax%x(i,1,1,1) 
+         z = this%zax%x(i,1,1,1)
+         y0 = sqrt(x**2+y**2) - Rc !y of straight pipe before deformation (when x is axial direction). Minus Rc shifts Coordinate system to center of pipe 
+         alpha = atan2(y0, z)
+         r = sqrt(y0**2+z**2) !r of helical coordinate system (s, r, theta)
+         angle_t = atan2(x,y) !phi measured clockwise from 12 noon
+         ri = 1./abs(1+delta*r*sin(alpha)) 
+         us = cos(phi)*(u%x(i,1,1,1)*cos(angle_t)-v%x(i,1,1,1)*sin(angle_t))+w%x(i,1,1,1)*sin(phi)!dot product (u,v).(cos(phi), -sin(phi))
+
+         usr = us*ri
+         num = num + usr*c_Xh%B(i,1,1,1)
+         den = den +  ri*c_Xh%B(i,1,1,1)
+   
+      end do
+
+      call MPI_Allreduce(MPI_IN_PLACE, num, 1, MPI_REAL_PRECISION, MPI_SUM, NEKO_COMM, ierr)
+      call MPI_Allreduce(MPI_IN_PLACE, den, 1, MPI_REAL_PRECISION, MPI_SUM, NEKO_COMM, ierr)
+
+      ubar = num/den ! "1/r"-weighted volumetric average of streamwise velocity
+
+   end function get_ubar_str_field
+
    function get_ubar_str_helix(this, u, v, w, c_Xh) result(ubar)
       implicit none
       class(fluid_volflow_t), intent(inout) :: this

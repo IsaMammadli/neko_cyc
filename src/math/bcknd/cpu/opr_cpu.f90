@@ -47,7 +47,7 @@ module opr_cpu
   public :: opr_cpu_dudxyz, opr_cpu_opgrad, opr_cpu_cdtp, &
        opr_cpu_conv1, opr_cpu_curl, opr_cpu_cfl, opr_cpu_lambda2, &
        opr_cpu_convect_scalar, opr_cpu_set_convect_rst, &
-       opr_cpu_rotate_cyc_r4, opr_cpu_rotate_cyc_vector 
+       opr_cpu_rotate_cyc_r4, opr_cpu_rotate_cyc_r1 
        !opr_cpu_rotate_cyc_loc, set_periodic_idx
 
   interface
@@ -312,7 +312,7 @@ contains
   end subroutine opr_cpu_lambda2
 
 
-  subroutine opr_cpu_rotate_cyc_vector(rx, ry, rz, idir, coef)
+  subroutine opr_cpu_rotate_cyc_r1(rx, ry, rz, idir, coef)
     use iso_c_binding
     real(kind=rp), dimension(:), intent(inout) :: rx, ry, rz
     integer, intent(in) :: idir
@@ -360,7 +360,7 @@ contains
           end if
     end do
 
-  end subroutine opr_cpu_rotate_cyc_vector
+  end subroutine opr_cpu_rotate_cyc_r1
 
 
   subroutine opr_cpu_rotate_cyc_r4(rx, ry, rz, idir, coef)
