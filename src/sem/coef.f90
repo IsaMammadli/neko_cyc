@@ -368,14 +368,12 @@ contains
        call invcol1(this%mult, n)
     end if
 
-
    allocate(this%cyc_angle(this%Xh%lx, this%Xh%ly, this%Xh%lz, this%msh%nelv)) !cyclic_mod_coef
-   call coef_compute_cyclic_angle(this) !cyclic_mod_coef
-
    if (NEKO_BCKND_DEVICE .eq. 1) then !cyclic_mod_coef
        call device_map(this%cyc_angle, this%cyc_angle_d, n)
+       !write(*, *) "Mapped cyclic data to device"
    end if
-
+   call coef_compute_cyclic_angle(this) !cyclic_mod_coef
   end subroutine coef_init_all
 
   !> Deallocate coefficients
@@ -1182,13 +1180,14 @@ contains
   subroutine coef_compute_cyclic_angle(coef)
     type(coef_t), intent(inout) :: coef
     integer :: i, j, k, e, n, lx, ly, lz, np, pf, pe, ntot
-    real(kind=rp) :: un(3), cost, length, sum_n(3), sum
+    real(kind=rp) :: un(3)!, cost, length, sum_n(3)
     
+    ntot = coef%dof%size()
     np =  coef%msh%periodic%size
     lx = coef%Xh%lx
     ly = coef%Xh%ly
     lz = coef%Xh%lz
-    call rzero(coef%cyc_angle, coef%dof%size())
+    call rzero(coef%cyc_angle, ntot)
 
     do n = 1, np
       pf = coef%msh%periodic%facet_el(n)%x(1)
@@ -1201,12 +1200,15 @@ contains
             !length = sqrt(un(1)*un(1)+un(2)*un(2))
             !cost = un(1)/length !sint = un(2)/length
             coef%cyc_angle(i, j, k, pe) = atan2(un(2), un(1))
-            !sum_n = sum_n+un
          end if
       end do
       end do 
       end do
     end do
+
+    if (NEKO_BCKND_DEVICE .eq. 1) then
+      call device_memcpy(coef%cyc_angle, coef%cyc_angle_d, ntot, HOST_TO_DEVICE, sync=.false.)
+    end if
 
   end subroutine coef_compute_cyclic_angle 
 

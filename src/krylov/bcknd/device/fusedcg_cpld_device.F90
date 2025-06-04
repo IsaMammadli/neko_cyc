@@ -605,6 +605,7 @@ contains
 
          call Ax%compute_vector(w1, w2, w3, &
               p1(1, p_cur), p2(1, p_cur), p3(1, p_cur), coef, x%msh, x%Xh)
+         !write(*, *) "Rotate from fusedcoupledcg"
          call rotate_cyc(w1, w2, w3, 1, coef)
          call gs_h%op(w1, n, GS_OP_ADD, this%gs_event1)
          call device_event_sync(this%gs_event1)
@@ -616,6 +617,8 @@ contains
          call device_event_sync(this%gs_event3)
          call blstz%apply(w3, n)
          call rotate_cyc(w1, w2, w3, 0, coef)
+         !write(*, *) "Rotate from fusedcoupledcg succ"
+
 
 
          call device_fusedcg_cpld_part1(w1_d, w2_d, w3_d, p1_d(p_cur), &

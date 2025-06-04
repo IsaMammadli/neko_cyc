@@ -324,7 +324,7 @@ contains
     !lx = coef%Xh%lx
     !ly = coef%Xh%ly
     !lz = coef%Xh%lz
-    tol = 1.0e-10_rp
+    tol = 1.0e-15_rp
     ntot = coef%dof%size()
 
     do i = 1, ntot

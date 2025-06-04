@@ -252,7 +252,7 @@ contains
     integer :: ierr, integer_val, solver_maxiter
     character(len=:), allocatable :: solver_type, precon_type
     logical :: monitor, found
-    logical :: advection
+    logical :: advection, cyc_cur
     type(json_file) :: numerics_params
 
     call this%free()
@@ -272,12 +272,12 @@ contains
     call json_get(params, 'case.numerics.time_order', integer_val)
     call json_get_or_default(params, 'case.fluid.cyclic', this%c_Xh%cyclic, &
           .false.) !cyclic_mod_for_stress_formulation
-   
+     call json_get_or_default(params, 'case.fluid.cyclic', cyc_cur, &
+                    .false.) !cyclic_mod_for_stress_formulation
 
     allocate(this%ext_bdf)
     call this%ext_bdf%init(integer_val)
-
-    if (this%variable_material_properties .eqv. .true. .or.  this%c_Xh%cyclic) then
+    if (this%variable_material_properties .or.  this%c_Xh%cyclic) then
        ! Setup backend dependent Ax routines
        call ax_helm_factory(this%Ax_vel, full_formulation = .true.)
 
@@ -286,6 +286,7 @@ contains
 
        ! Setup backend dependent vel residual routines
        call pnpn_vel_res_stress_factory(this%vel_res)
+       write(*, *) "Full formulation"
        !this%variable_material_properties = .false. !cyclic_mod_for_stress_formulation
     else
        ! Setup backend dependent Ax routines
@@ -296,6 +297,7 @@ contains
 
        ! Setup backend dependent vel residual routines
        call pnpn_vel_res_factory(this%vel_res)
+       write(*, *) "Not Full formulation"
     end if
 
     ! Setup Ax for the pressure

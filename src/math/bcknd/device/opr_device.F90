@@ -39,7 +39,7 @@ module opr_device
   use coefs, only : coef_t
   use field, only : field_t
   use utils, only : neko_error
-  use device_math, only : device_sub3, device_rzero, device_copy
+  use device_math, only : device_sub3, device_rzero, device_copy, device_cfill
   use device_mathops, only : device_opcolv
   use comm
   use, intrinsic :: iso_c_binding
@@ -668,6 +668,7 @@ contains
     call device_opcolv(w1%x_d, w2%x_d, w3%x_d, c_Xh%B_d, gdim, n)
 
     if (present(event)) then
+       !write(*, *) "Rotate from device_curl"
        if(c_Xh%cyclic) call opr_device_rotate_cyc_r4(w1%x, w2%x, w3%x, 1, c_Xh)
        call c_Xh%gs_h%op(w1, GS_OP_ADD, event)
        call device_event_sync(event)
@@ -676,13 +677,15 @@ contains
        call c_Xh%gs_h%op(w3, GS_OP_ADD, event)
        call device_event_sync(event)
        if(c_Xh%cyclic) call opr_device_rotate_cyc_r4(w1%x, w2%x, w3%x, 0, c_Xh)
-
+       !write(*, *) "Rotate from device_curl succ"
     else
-       call opr_device_rotate_cyc_r4(w1%x, w2%x, w3%x, 1, c_Xh)
+       !write(*, *) "Rotate from device_curl"
+       if(c_Xh%cyclic) call opr_device_rotate_cyc_r4(w1%x, w2%x, w3%x, 1, c_Xh)
        call c_Xh%gs_h%op(w1, GS_OP_ADD)
        call c_Xh%gs_h%op(w2, GS_OP_ADD)
        call c_Xh%gs_h%op(w3, GS_OP_ADD)
-       call opr_device_rotate_cyc_r4(w1%x, w2%x, w3%x, 0, c_Xh)
+       if(c_Xh%cyclic) call opr_device_rotate_cyc_r4(w1%x, w2%x, w3%x, 0, c_Xh)
+       !write(*, *) "Rotate from device_curl succ"
     end if
 
     call device_opcolv(w1%x_d, w2%x_d, w3%x_d, c_Xh%Binv_d, gdim, n)
@@ -740,12 +743,9 @@ contains
     real(rp), dimension(coef%Xh%lx, coef%Xh%ly, coef%Xh%lz, coef%msh%nelv) :: &
               rx, ry, rz
     type(c_ptr) :: rx_d, ry_d, rz_d
-
-
     rx_d = device_get_ptr(rx)
     ry_d = device_get_ptr(ry)
     rz_d = device_get_ptr(rz)
-
 #ifdef HAVE_HIP
      call neko_error('No device backend configured for rotate_cyc')
 #elif HAVE_CUDA
@@ -766,11 +766,9 @@ subroutine opr_device_rotate_cyc_r1(rx, ry, rz, idir, coef)
      real(rp), dimension(coef%Xh%lx*coef%Xh%ly*coef%Xh%lz*coef%msh%nelv) :: &
                rx, ry, rz
      type(c_ptr) :: rx_d, ry_d, rz_d
- 
      rx_d = device_get_ptr(rx)
      ry_d = device_get_ptr(ry)
      rz_d = device_get_ptr(rz)
- 
 #ifdef HAVE_HIP
       call neko_error('No device backend configured for rotate_cyc')
 #elif HAVE_CUDA

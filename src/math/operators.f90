@@ -645,8 +645,8 @@ contains
       real(kind=rp), dimension(:,:,:,:), intent(inout) :: vx, vy, vz
       integer, intent(in) :: idir
       type(coef_t),  intent(in) :: coef
-
       if (coef%cyclic) then
+         !write(*, *) "Called rot_r4"
          if (NEKO_BCKND_SX .eq. 1) then
          !TODOS: opdssum sx
          write(*, *) "ROTATE_CYC not available in SX yet"
@@ -666,19 +666,19 @@ contains
       real(kind=rp), dimension(:), intent(inout) :: vx, vy, vz
       integer, intent(in) :: idir
       type(coef_t),  intent(in) :: coef
-         
       if (coef%cyclic) then
+         !write(*, *) "Called rot_r1"
          if (NEKO_BCKND_SX .eq. 1) then
          !TODOS: opdssum sx
-         write(*, *) "ROTATE_CYC not available in SX yet"
+            write(*, *) "ROTATE_CYC not available in SX yet"
          else if (NEKO_BCKND_XSMM .eq. 1) then
          !TODOS: opdssum xsmm
-         write(*, *) "ROTATE_CYC not available in XSMM yet"
+            write(*, *) "ROTATE_CYC not available in XSMM yet"
          else if (NEKO_BCKND_DEVICE .eq. 1) then
          !only CUDA
-         call opr_device_rotate_cyc_r1(vx, vy, vz, idir, coef)
+            call opr_device_rotate_cyc_r1(vx, vy, vz, idir, coef)
          else
-         call opr_cpu_rotate_cyc_r1(vx, vy, vz, idir, coef)
+            call opr_cpu_rotate_cyc_r1(vx, vy, vz, idir, coef)
          end if
       end if
   end subroutine rotate_cyc_r1

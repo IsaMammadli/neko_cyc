@@ -2,7 +2,7 @@
 module pnpn_res_stress_device
   use gather_scatter, only : gs_t, GS_OP_ADD
   use utils, only : neko_error
-  use operators, only : dudxyz, cdtp, curl, opgrad, strain_rate
+  use operators, only : dudxyz, cdtp, curl, opgrad, strain_rate, rotate_cyc
   use field, only : field_t
   use ax_product, only : ax_t
   use coefs, only : coef_t
@@ -290,10 +290,14 @@ contains
 #else
     call neko_error('No device backend configured')
 #endif
-
+    write(*, *) "Rotate from device_res_stress"
+    call rotate_cyc(ta1%x, ta2%x, ta3%x, 1, c_Xh)
     call gs_Xh%op(ta1, GS_OP_ADD)
     call gs_Xh%op(ta2, GS_OP_ADD)
     call gs_Xh%op(ta3, GS_OP_ADD)
+    call rotate_cyc(ta1%x, ta2%x, ta3%x, 0, c_Xh)
+    !write(*, *) "Rotate from device_res_stress succ"
+
 
     call device_opcolv(ta1%x_d, ta2%x_d, ta3%x_d, c_Xh%Binv_d, gdim, n)
 

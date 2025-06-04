@@ -223,7 +223,6 @@ contains
     call gs%op(v%x, v%dof%size(), GS_OP_ADD)
     call gs%op(w%x, w%dof%size(), GS_OP_ADD)
     call rotate_cyc(u%x, v%x, w%x, 0, coef)
-
     if (NEKO_BCKND_DEVICE .eq. 1) then
        call device_col2(u%x_d, coef%mult_d, u%dof%size())
        call device_col2(v%x_d, coef%mult_d, v%dof%size())

@@ -148,6 +148,7 @@ contains
     call gs_Xh%op(ta2, GS_OP_ADD)
     call gs_Xh%op(ta3, GS_OP_ADD)
     call rotate_cyc(ta1%x, ta2%x, ta3%x, 0, c_Xh)
+    !write(*, *) 'Rotate from pnpn_res_stress succ'
 
     do i = 1, n
        ta1%x(i,1,1,1) = ta1%x(i,1,1,1) * c_Xh%Binv(i,1,1,1)
