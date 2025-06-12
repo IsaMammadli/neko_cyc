@@ -290,7 +290,7 @@ contains
 #else
     call neko_error('No device backend configured')
 #endif
-    write(*, *) "Rotate from device_res_stress"
+    !write(*, *) "Rotate from device_res_stress"
     call rotate_cyc(ta1%x, ta2%x, ta3%x, 1, c_Xh)
     call gs_Xh%op(ta1, GS_OP_ADD)
     call gs_Xh%op(ta2, GS_OP_ADD)
